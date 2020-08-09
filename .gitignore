@@ -4,5 +4,7 @@ replays
 halite.exe
 run_game.bat
 run_game.sh
-Watch Halite
+Watch Halite.url
 workspace.code-workspace
+.gitignore
+helpfile.txt
