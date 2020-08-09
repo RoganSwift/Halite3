@@ -62,7 +62,7 @@ def scan_pvalues(repeats=5, *args):
 P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 before = time.time()
-averages = scan_pvalues(5, P0_values, P1_values, P2_values)
+averages = scan_pvalues(1, P0_values, P1_values, P2_values)
 after = time.time()
 
 sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
