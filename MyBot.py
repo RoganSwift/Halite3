@@ -34,8 +34,8 @@ if logging_level >= 1:
 
 # This is the list of personality parameters to be determined through machine learning.
 p = [0.05,
+     0.5,
      0.5
-
 ]
 
 i = 0
@@ -45,7 +45,8 @@ for arg in sys.argv[2:]:
     i += 1
 
 q = (p[0]*200, # 0 to 200 - Amount of halite in cell where ships consider it depleted.
-     (0.5+p[1]*0.25)*constants.MAX_HALITE # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
+     (0.5+p[1]*0.25)*constants.MAX_HALITE, # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
+     1 + round(p[2]*29) # 1 to 30 - max number of bots
 )
 
 
@@ -242,7 +243,7 @@ while True:
     # If the game is in the first 200 turns and you have enough halite, spawn a ship.
     # Don't spawn a ship if you currently have a ship at port, though - the ships will collide.
     #TODO: Remove limit on ships after a successful run
-    if game.turn_number <= 200 and me.halite_amount >= constants.SHIP_COST and not game_map[me.shipyard].is_occupied and len(me.get_ships()) <= 9:
+    if game.turn_number <= 200 and me.halite_amount >= constants.SHIP_COST and not game_map[me.shipyard].is_occupied and len(me.get_ships()) <= q[2]:
         if logging_level >= 2:
                 logging.info("Generating new ship.")
         command_queue.append(me.shipyard.spawn())

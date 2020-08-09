@@ -5,6 +5,8 @@ import subprocess
 import json
 from statistics import stdev, mean
 import itertools
+import matplotlib.pyplot as plt
+import time
 
 def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", replaying=False, delete_logs=True):
     if replaying:
@@ -24,8 +26,6 @@ def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", repla
         if line.find("[P0]") >= 0 and line.find("collided") >= 0:
             collisions += 1
 
-    print(executed.stderr)
-
     halite_amounts = []
     with open("bot-0.log") as log_file:
         for line in log_file:
@@ -41,23 +41,35 @@ def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", repla
 
     return {'map':game_map,'halite':halite_amounts, 'seed':seed, 'collisions':collisions}
 
-def scan_pvalues(P0_values, P1_values):
+def scan_pvalues(repeats=5, *args):
+    p_values = args
     averages = []
-    for sample in itertools.product(P0_values, P1_values): 
+    for sample in itertools.product(*p_values): 
         maxes = []
-        for _ in range(5):
-            data = call_halite(bot1=f"MyBot.py 2 {sample[0]} {sample[1]}", delete_logs=False)
+        str_sample = ' '.join([str(item) for item in sample])
+        print(f"Calling Halite with p values: {str(sample)}")
+        for _ in range(repeats):
+            data = call_halite(bot1=f"MyBot.py 2 {str_sample}", delete_logs=False)
             halite_data = data['halite']
-            two_columns = zip(*halite_data)
-            max_halite = max(list(two_columns)[1])
+            max_round, max_halite = sorted(halite_data,key=lambda x:x[1], reverse=True)[0]
+            print(f" - Best halite was {max_halite} on round {max_round}")
 
             maxes.append(max_halite)
-        averages.append([sample, mean(maxes)])
+        averages.append([round(mean(maxes)), *sample])
 
     return averages
 
-P0_values = [0.1, 0.5, 0.9]
-P1_values = [0.1, 0.5, 0.9]
+P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
-result = call_halite()
-print(f"seed: {result['seed']}, collisions: {result['collisions']}")
+before = time.time()
+averages = scan_pvalues(5, P0_values, P1_values, P2_values)
+after = time.time()
+
+sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
+pretty_sorted_averages = "\n".join([str(row) for row in sorted_averages])
+
+with open("result.log", "w") as file:
+    file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
+    file.write(pretty_sorted_averages)
+
+#TODO: Figure out why collisions occur. Watch a replay.
