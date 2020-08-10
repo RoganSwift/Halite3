@@ -6,6 +6,5 @@ run_game.bat
 run_game.sh
 WatchHalite.url
 workspace.code-workspace
-.gitignore
 helpfile.txt
 *.log
