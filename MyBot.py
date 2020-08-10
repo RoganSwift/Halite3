@@ -136,6 +136,10 @@ def desired_move(ship, invalid_positions=[], on_shipyard=False):
         logging.info("- Checking desired move for ship {}.".format(ship.id))
     position = ship.position
     target = determine_target(ship)
+
+    if ship.halite_amount < game_map[ship.position].halite_amount*0.1 or position == target:
+        return ("stay", position)
+
     if logging_level >= 2:
         logging.info(f"- - Desired move for ship {ship.id} is {str(target)}.")
     move_order = "stay"
@@ -160,6 +164,36 @@ def desired_move(ship, invalid_positions=[], on_shipyard=False):
         logging.info(f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
     return (move_order, destination)
 
+def move_ship(ship, invalid_positions, ignore_ships):
+    #TODO: Add comments
+    moved = False
+    loopcounter = 0
+    while not moved and loopcounter < 100:
+        if ship.position == me.shipyard.position:
+            on_shipyard = True
+        else:
+            on_shipyard = False
+        move_direction, move_position = desired_move(ship, invalid_positions, on_shipyard)
+
+        for other_ship in me.get_ships():
+            if other_ship.position == move_position and other_ship not in ignore_ships:
+                move_ship(other_ship, invalid_positions, [iship for iship in ignore_ships].append(ship))
+            else:
+                if move_direction == "stay":
+                    command_queue.append(ship.stay_still())
+                    invalid_positions.append(ship.position)
+                else:
+                    command_queue.append(ship.move(move_direction)) 
+                    invalid_positions.append(move_position)
+                moved = True
+        
+        loopcounter += 1
+    
+    if loopcounter >= 100:
+        command_queue.append(ship.stay_still())
+        invalid_positions.append(ship.position)
+
+
 while True:
     if logging_level >= 1:
         logging.info(f"##FL-Round:{game.turn_number}:{game.me.halite_amount}")
@@ -173,17 +207,27 @@ while True:
 
     # A command queue holds all the commands you will run this turn. You build this list up and submit it at the
     #   end of the turn.
-    ship_targets = {}
     command_queue = []
+    #Create list of committed destinations (moving here causes a collision)
+    invalid_positions = []
+    ignore_ships = []
 
+    #TODO: for ship in ships, if ship not in command_queue: move_ship()
+
+
+
+
+
+
+    a = '''
     # Possible collision case:
     #   s
     # >>>s
     #   s
     # If 2 > bots move before 3rd > bot, 3rd bot has no place to go.
 
-    #Create list of committed destinations (moving here causes a collision)
-    invalid_positions = []
+
+
 
     #Create list of ships that have received orders from the first step.
     #TODO: Sometimes bots collide.
@@ -239,10 +283,11 @@ while True:
                     logging.info(f"!!! Ordering ship {ship_orders[i][0].id} to move {str(move_direction)}.")
                 command_queue.append(ship_orders[i][0].move(move_direction))
             invalid_positions.append(move_position)   
+'''
+
 
     # If the game is in the first 200 turns and you have enough halite, spawn a ship.
     # Don't spawn a ship if you currently have a ship at port, though - the ships will collide.
-    #TODO: Remove limit on ships after a successful run
     if game.turn_number <= 200 and me.halite_amount >= constants.SHIP_COST and not game_map[me.shipyard].is_occupied and len(me.get_ships()) <= q[2]:
         if logging_level >= 2:
                 logging.info("Generating new ship.")
