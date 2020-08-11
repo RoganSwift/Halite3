@@ -1,5 +1,6 @@
 # Python 3.6
 # rules: https://web.archive.org/web/20181019011459/http://www.halite.io/learn-programming-challenge/game-overview
+#inconsequential change to confirm this works
 
 import sys
 import json
