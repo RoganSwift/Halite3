@@ -59,17 +59,21 @@ def scan_pvalues(repeats=5, *args):
 
     return averages
 
-P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
+# P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
-before = time.time()
-averages = scan_pvalues(1, P0_values, P1_values, P2_values)
-after = time.time()
+# before = time.time()
+# averages = scan_pvalues(1, P0_values, P1_values, P2_values)
+# after = time.time()
 
-sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
-pretty_sorted_averages = "\n".join([str(row) for row in sorted_averages])
+# sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
+# pretty_sorted_averages = "\n".join([str(row) for row in sorted_averages])
 
-with open("result.log", "w") as file:
-    file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
-    file.write(pretty_sorted_averages)
+# with open("result.log", "w") as file:
+#     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
+#     file.write(pretty_sorted_averages)
+
+results = call_halite(delete_logs=False)
+print(results["collisions"])
+#TODO: test all the changes from this update
 
 #TODO: Figure out why collisions occur. Watch a replay.

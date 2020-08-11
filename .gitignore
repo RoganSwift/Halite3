@@ -1,10 +1,7 @@
 Halite Source
-hlt
 replays
-halite.exe
 run_game.bat
 run_game.sh
-WatchHalite.url
 workspace.code-workspace
 helpfile.txt
 *.log
