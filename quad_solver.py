@@ -1,5 +1,7 @@
 import numpy as np
 
+#TODO: Implement http://www.ressources-actuarielles.net/EXT/ISFA/1226.nsf/0/f84f7ac703bf5862c12576d8002f5259/$FILE/Jones98.pdf
+
 def solve_quad(x_values, y_values):
     #TODO: Comments
     x_int = []
