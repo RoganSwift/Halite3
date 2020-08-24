@@ -14,7 +14,7 @@ def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", repla
     else:
         replay_text = "--no-replay"
 
-    command = f'halite.exe -i replays --no-logs {replay_text} --width {width} --height {height} "python {bot1}" "python {bot2}"'
+    command = f'halite.exe -i replays {replay_text} --width {width} --height {height} "python {bot1}" "python {bot2}"'
 
     executed = subprocess.run(command, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
     
@@ -39,7 +39,7 @@ def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", repla
         os.remove("bot-0.log")
         os.remove("bot-1.log")
 
-    return {'map':game_map,'halite':halite_amounts, 'seed':seed, 'collisions':collisions}
+    return {'map':game_map,'halite':halite_amounts, 'seed':seed, 'collisions':collisions, 'stderr':executed.stderr}
 
 def scan_pvalues(repeats=5, *args):
     p_values = args
@@ -59,6 +59,25 @@ def scan_pvalues(repeats=5, *args):
 
     return averages
 
+def many_repeat_n_calls(n,z,p_values):
+    p_values_text = ' '.join([str(item) for item in p_values])
+    averages = []
+    for i in range(z):
+        print("Loop {}".format(i))
+        maxes = []
+        for j in range(n):
+            data = call_halite(bot1=f"MyBot.py 2 {p_values_text}", delete_logs=False)
+            halite_data = data['halite']
+            max_round, max_halite = sorted(halite_data,key=lambda x:x[1], reverse=True)[0]
+            maxes.append(max_halite)
+        print(" - Maxes: {}".format(maxes))
+        print(" - Mean: {}".format(mean(maxes)))
+        averages.append(mean(maxes))
+        print()
+    print("Mean of means: {}".format(mean(averages)))
+    print("Stdev of means: {}".format(stdev(averages)))
+    return (mean(averages),stdev(averages))
+
 # P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 # before = time.time()
@@ -72,8 +91,11 @@ def scan_pvalues(repeats=5, *args):
 #     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
 #     file.write(pretty_sorted_averages)
 
-results = call_halite(delete_logs=False)
-print(results["collisions"])
+results = call_halite(bot1="MyBot.py 2", delete_logs=False)
+print(results['stderr'])
 #TODO: test all the changes from this update
+
+#print(many_repeat_n_calls(1,10,[0.5,0.5,0.5,0.5]))
+
 
 #TODO: Figure out why collisions occur. Watch a replay.

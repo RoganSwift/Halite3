@@ -16,12 +16,23 @@ import logging
 
 """ <<<Game Begin>>> """
 
-# This game object contains the initial game state.
+#sys.argv[0] is "MyBot.py", which we don't need to save.
+if len(sys.argv) >= 2:
+    logging_level = int(sys.argv[1])
+else:
+    logging_level = 0
+
+if len(sys.argv) >= 3:
+    pickle_level = int(sys.argv[2])
+else:
+    pickle_level = 0
+#pickle_level = 1
+
+""" <<<Map Is Accessible>> """
+
 game = hlt.Game()
 # At this point "game" variable is populated with initial map data.
 # This is a good place to do computationally expensive start-up pre-processing.
-
-logging_level = int(sys.argv[1])
 
 if logging_level >= 1:
 #    game.update_frame()
@@ -36,9 +47,10 @@ p = [0.5,
      0.5,
      0.5
 ] #TODO: Consider adding p[3] = cap on last round to make ships
+#TODO: Add halite depleted on turn 400; linear interpolation between two
 
 i = 0
-for arg in sys.argv[2:]:
+for arg in sys.argv[3:]:
     logging.info(f"Arg: {str(arg)}")
     p[i] = float(arg)
     i += 1
@@ -104,11 +116,10 @@ def determine_target(ship):
                 logging.info(f"- - Target for ship {ship.id} is shipyard.")
         return me.shipyard.position
     else:
-        logging.info("TEST - Starting search")
         cells_searched = 0
         for search_position in spiral_walk(ship.position.x, ship.position.y):
             if logging_level >= 3:
-                logging.info(f"- - - Checking search position {str(search_position)} with {game_map[search_position].halite_amount} halite. ")
+                logging.info(f"- - - Checking search position {str(search_position)} with {game_map[search_position].halite_amount} halite.")
             if game_map[search_position].halite_amount >= q[0]:
                 if logging_level >= 3:
                     logging.info(f"- - - Target for ship {ship.id} is {str(search_position)}")
@@ -156,14 +167,15 @@ def desired_move(ship, invalid_positions=[], on_shipyard=False):
         logging.info(f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
     return (move_order, destination)
 
-def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships):
+def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me):
+    logging.info(f"Move_ship_recursion start: Ship {ship.id}")
     # Orders closest-to-target move for ship and any ship in its path, recursively.
     moved = False
     loopcounter = 0 # Infinite loops terrify me, so loopcounter has a max of 10, which should never occur. (Actual max 5)
     while not moved and loopcounter < 10:
         # Check for the ship's desired move, considering that it can't go to any committed positions (invalid_positions)
         move_direction, move_position = desired_move(ship, invalid_positions, ship.position == me.shipyard.position)
-
+        logging.info(f"Move_ship_recursion: Ship {ship.id} considering direction {move_direction} position {move_position}")
         # Collisions are only possible with ships meeting the following criteria:
         # (1) has not moved yet and (2) is currently on the target space
         #  - Ships after this ship won't target this target because it will be in invalid_targets once this ship commits
@@ -173,9 +185,10 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships):
         # To resolve this, check every ship for these three criteria
         no_ships_on_target = True
         for other_ship in me.get_ships():
-            if other_ship.position == move_position and other_ship.id not in ignore_ships and other_ship.id not in moved_ships:
+            if ship.id != other_ship.id and other_ship.position == move_position and other_ship.id not in ignore_ships and other_ship.id not in moved_ships:
+                logging.info(f"Move_ship_recursion: Ship {ship.id} blocked by {other_ship}. Letting it go first.")
                 # If one is found, let it move first, ignoring this ship (criteria (3) above)
-                move_ship_recursive(other_ship, invalid_positions, [iship for iship in ignore_ships].append(ship.id), moved_ships)
+                move_ship_recursive(other_ship, invalid_positions, [iship for iship in ignore_ships].append(ship.id), moved_ships, me)
                 # If that ship (or its down-chain friends) decided to commit this spot,
                 #   we need to restart the while loop and desired_move elsewhere.
                 if move_position in invalid_positions:
@@ -185,9 +198,11 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships):
         # If, after looking at all other ships, none meet the criteria and want to stay, we can commit the move.
         if no_ships_on_target:
             if move_direction == "stay":
+                logging.info(f"Move_ship_recursion: Ship {ship.id} decided to stay at {ship.position}")
                 command_queue.append(ship.stay_still())
                 invalid_positions.append(ship.position)
             else:
+                logging.info(f"Move_ship_recursion: Ship {ship.id} decided to move {move_direction} to {move_position}")
                 command_queue.append(ship.move(move_direction)) 
                 invalid_positions.append(move_position)
             moved_ships.append(ship.id)
@@ -201,14 +216,13 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships):
         command_queue.append(ship.stay_still())
         invalid_positions.append(ship.position)
 
-while True:
+""" Definition of one game step """
+
+def one_game_step(me, game_map):
+    command_queue = [] # command queue ready to be populated
+
     if logging_level >= 1:
         logging.info(f"##FL-Round:{game.turn_number}:{game.me.halite_amount}")
-
-    game.update_frame() # pull updated data
-    me = game.me # player data
-    game_map = game.game_map # updated game map
-    command_queue = [] # command queue ready to be populated
 
     #TODO: Create a function which (game_map, ship_positions) -> command_queue. Allows testing + replay
 
@@ -224,15 +238,20 @@ while True:
     #      If you can't grab a list of their positions, spiral_walk until you find the closest.
     for ship in me.get_ships():
         if ship.id not in moved_ships:
-            move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships)
-
-    logging.info(f"Command queue: {str(command_queue)}")
+            move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me)
 
     if me.halite_amount >= constants.SHIP_COST and not me.shipyard.position in invalid_positions and len(me.get_ships()) <= q[2]:
         if logging_level >= 2:
                 logging.info("Generating new ship.")
         command_queue.append(me.shipyard.spawn())
 
-    # Send your moves back to the game environment, ending this turn.
-    game.end_turn(command_queue)
+    logging.info(f"Command queue: {str(command_queue)}")
+    return command_queue
 
+""" <<Running the Loop>> """
+
+while True:
+    game.update_frame() # pull updated data
+    command_queue = one_game_step(game.me, game.game_map)
+    game.end_turn(command_queue)
+# TODO: Anything in a function is not visible to other functions unless passed, so me/game_map/invalid_positions all behave wrong now that I've moved them into a function
