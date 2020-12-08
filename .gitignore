@@ -5,3 +5,4 @@ run_game.sh
 workspace.code-workspace
 helpfile.txt
 *.log
+open.bat
