@@ -1,20 +1,18 @@
 # Python 3.6
 # rules: https://web.archive.org/web/20181019011459/http://www.halite.io/learn-programming-challenge/game-overview
 
+""" Stage 0: Imports - Permitted X minutes here
+    Access to only code.    
+"""
+
 import sys
 import json
+import logging
 
 # Import the Halite SDK, which will let you interact with the game.
 import hlt
-
-# This library contains constant values.
-from hlt import constants
-
-# This library contains direction metadata to better interface with the game.
-from hlt.positionals import Direction, Position
-import logging
-
-""" <<<Game Begin>>> """
+from hlt import constants # This library contains constant values.
+from hlt.positionals import Direction, Position # This library contains direction metadata to better interface with the game.
 
 #sys.argv[0] is "MyBot.py", which we don't need to save.
 if len(sys.argv) >= 2:
@@ -22,57 +20,15 @@ if len(sys.argv) >= 2:
 else:
     logging_level = 0
 
-if len(sys.argv) >= 3:
-    pickle_level = int(sys.argv[2])
-else:
-    pickle_level = 0
-#pickle_level = 1
+# TODO: pickle_level as arg[2] removed. See if you can shift stuff up.
 
-""" <<<Map Is Accessible>> """
-
-game = hlt.Game()
-# At this point "game" variable is populated with initial map data.
-# This is a good place to do computationally expensive start-up pre-processing.
-
-if logging_level >= 1:
-#    game.update_frame()
-    game_map = game.game_map
-    map_array = [
-                 [game_map[Position(x,y)].halite_amount for x in range(game_map.width)] for y in range(game_map.height)
-                 ]
-    logging.info(f"##FL-Map:{str(json.dumps(map_array))}")
-
-# This is the list of personality parameters to be determined through machine learning.
-p = [0.5,
-     0.5,
-     0.5
-] #TODO: Consider adding p[3] = cap on last round to make ships
-#TODO: Add halite depleted on turn 400; linear interpolation between two
-
-i = 0
-for arg in sys.argv[3:]:
-    logging.info(f"Arg: {str(arg)}")
-    p[i] = float(arg)
-    i += 1
-
-q = (p[0]*200, # 0 to 200 - Amount of halite in cell where ships consider it depleted.
-     (0.5+p[1]*0.25)*constants.MAX_HALITE, # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
-     1 + round(p[2]*29) # 1 to 30 - max number of bots
-)
-
-# As soon as you call "ready" function below, the 2 second per turn timer will start.
-game.ready("MyPythonBot")
-
-# Now that your bot is initialized, save a message to yourself in the log file with some important information.
-#   Here, you log here your id, which you can always fetch from the game object by using my_id.
-if logging_level >= 1:
-    logging.info("Successfully created bot! My Player ID is {}.".format(game.my_id))
-
-""" <<<Game Loop>>> """
+def sc_log(level, message):
+    '''Shortcut Log: if logging_level >= level: logging.info(message)'''
+    if logging_level >= level:
+        logging.info(message)
 
 def spiral_walk(starting_x, starting_y):
-    if logging_level >= 3:
-        logging.info(f"Walking a spiral from {starting_x},{starting_y}.")
+    sc_log(3, f"Walking a spiral from {starting_x},{starting_y}.")
     x,y = starting_x, starting_y
     yield Position(x,y)
     i = 1
@@ -92,59 +48,48 @@ def spiral_walk(starting_x, starting_y):
             yield Position(x,y)
         i+=1
 
-def dist_betw_positions(position, target, offset_x = 0, offset_y = 0):
-    return (position.x+offset_x-target.x)**2+(position.y+offset_y-target.y)**2
+def dist_betw_positions(start, end, offset_x = 0, offset_y = 0):
+    return (start.x+offset_x-end.x)**2+(start.y+offset_y-end.y)**2
 
 def offset_not_in_invalid(position, invalid_positions, offset_x=0, offset_y=0):
-    if logging_level >= 3:
-        logging.info(f"Offset_not_in_invalid: Position - {str(position)}")
+    sc_log(3, f"Offset_not_in_invalid: Position - {str(position)}")
     for invalid in invalid_positions:
-        if logging_level >= 3:
-            logging.info(f"Offset_not_in_invalid: Invalid - {str(invalid)}")
+        sc_log(3, f"Offset_not_in_invalid: Invalid - {str(invalid)}")
         if position.x+offset_x == invalid.x and position.y+offset_y == invalid.y:
-            if logging_level >= 3:
-                logging.info(f"Offset_not_in_invalid: UNSAFE MOVE - REJECT")
+            sc_log(3, f"Offset_not_in_invalid: UNSAFE MOVE - REJECT")
             return False
-    if logging_level >= 3:
-        logging.info(f"Offset_not_in_invalid: SAFE MOVE - ALLOW")
+    sc_log(3, f"Offset_not_in_invalid: SAFE MOVE - ALLOW")
     return True
 
 def determine_target(ship):
     # If ship is full or (ship is on a drained square and carrying lots of halite)
     if ship.halite_amount == constants.MAX_HALITE or (ship.halite_amount > q[1] and game_map[ship.position].halite_amount < q[0]):
-        if logging_level >= 3:
-                logging.info(f"- - Target for ship {ship.id} is shipyard.")
+        sc_log(3, f"- - Target for ship {ship.id} is shipyard.")
         return me.shipyard.position
     else:
         cells_searched = 0
         for search_position in spiral_walk(ship.position.x, ship.position.y):
-            if logging_level >= 3:
-                logging.info(f"- - - Checking search position {str(search_position)} with {game_map[search_position].halite_amount} halite.")
+            sc_log(3, f"- - - Checking search position {str(search_position)} with {game_map[search_position].halite_amount} halite.")
             if game_map[search_position].halite_amount >= q[0]:
-                if logging_level >= 3:
-                    logging.info(f"- - - Target for ship {ship.id} is {str(search_position)}")
+                sc_log(3, f"- - - Target for ship {ship.id} is {str(search_position)}")
                 return search_position
 
             # If there is insufficient halite on the map (very high threshold for depleted), stop.
             cells_searched += 1
             if cells_searched > 4*max(constants.WIDTH, constants.HEIGHT)**2: # this is worst-case of sitting in a corner
-                if logging_level >= 1:
-                    logging.info(f"??? Search found insufficient halite on map - ordering ship not to move.")
+                sc_log(1, f"??? Search found insufficient halite on map - ordering ship not to move.")
                 return ship.position    
 
 def desired_move(ship, invalid_positions=[], on_shipyard=False):
-    if logging_level >= 3:
-        logging.info(f"Invalid Positions: {str(invalid_positions)}")
-    if logging_level >= 2:
-        logging.info("- Checking desired move for ship {}.".format(ship.id))
+    sc_log(3, f"Invalid Positions: {str(invalid_positions)}")
+    sc_log(2, "- Checking desired move for ship {}.".format(ship.id))
     position = ship.position
     target = determine_target(ship)
 
     if ship.halite_amount < game_map[ship.position].halite_amount*0.1 or position == target:
         return ("stay", position)
 
-    if logging_level >= 2:
-        logging.info(f"- - Desired move for ship {ship.id} is {str(target)}.")
+    sc_log(2, f"- - Desired move for ship {ship.id} is {str(target)}.")
     move_order = "stay"
     destination = position
     if on_shipyard:
@@ -163,19 +108,18 @@ def desired_move(ship, invalid_positions=[], on_shipyard=False):
             destination = Position(position.x+offset_x, position.y+offset_y)
             best_distance = diagonal_distance
 
-    if logging_level >= 2:
-        logging.info(f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
+    sc_log(2, f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
     return (move_order, destination)
 
 def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me):
-    logging.info(f"Move_ship_recursion start: Ship {ship.id}")
+    sc_log(1, f"Move_ship_recursion start: Ship {ship.id}")
     # Orders closest-to-target move for ship and any ship in its path, recursively.
     moved = False
     loopcounter = 0 # Infinite loops terrify me, so loopcounter has a max of 10, which should never occur. (Actual max 5)
     while not moved and loopcounter < 10:
         # Check for the ship's desired move, considering that it can't go to any committed positions (invalid_positions)
         move_direction, move_position = desired_move(ship, invalid_positions, ship.position == me.shipyard.position)
-        logging.info(f"Move_ship_recursion: Ship {ship.id} considering direction {move_direction} position {move_position}")
+        sc_log(1, "Move_ship_recursion: Ship {ship.id} considering direction {move_direction} position {move_position}")
         # Collisions are only possible with ships meeting the following criteria:
         # (1) has not moved yet and (2) is currently on the target space
         #  - Ships after this ship won't target this target because it will be in invalid_targets once this ship commits
@@ -186,7 +130,7 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me):
         no_ships_on_target = True
         for other_ship in me.get_ships():
             if ship.id != other_ship.id and other_ship.position == move_position and other_ship.id not in ignore_ships and other_ship.id not in moved_ships:
-                logging.info(f"Move_ship_recursion: Ship {ship.id} blocked by {other_ship}. Letting it go first.")
+                sc_log(1, f"Move_ship_recursion: Ship {ship.id} blocked by {other_ship}. Letting it go first.")
                 # If one is found, let it move first, ignoring this ship (criteria (3) above)
                 move_ship_recursive(other_ship, invalid_positions, [iship for iship in ignore_ships].append(ship.id), moved_ships, me)
                 # If that ship (or its down-chain friends) decided to commit this spot,
@@ -198,11 +142,11 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me):
         # If, after looking at all other ships, none meet the criteria and want to stay, we can commit the move.
         if no_ships_on_target:
             if move_direction == "stay":
-                logging.info(f"Move_ship_recursion: Ship {ship.id} decided to stay at {ship.position}")
+                sc_log(1, f"Move_ship_recursion: Ship {ship.id} decided to stay at {ship.position}")
                 command_queue.append(ship.stay_still())
                 invalid_positions.append(ship.position)
             else:
-                logging.info(f"Move_ship_recursion: Ship {ship.id} decided to move {move_direction} to {move_position}")
+                sc_log(1, f"Move_ship_recursion: Ship {ship.id} decided to move {move_direction} to {move_position}")
                 command_queue.append(ship.move(move_direction)) 
                 invalid_positions.append(move_position)
             moved_ships.append(ship.id)
@@ -212,17 +156,17 @@ def move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me):
     
     # As above, if the while loop goes way beyond where it should, fail gracefully and log.
     if not moved:
-        logging.info(f"FLWarning:Ship {ship.id} could not find a target in 10 checks")
+        sc_log(1, f"FLWarning:Ship {ship.id} could not find a target in 10 checks")
         command_queue.append(ship.stay_still())
         invalid_positions.append(ship.position)
 
-""" Definition of one game step """
-
-def one_game_step(me, game_map):
+def one_game_step(game):
+    """Determine and return the command_queue actions to take this turn."""
+    me = game.me
+    game_map = game.game_map
     command_queue = [] # command queue ready to be populated
 
-    if logging_level >= 1:
-        logging.info(f"##FL-Round:{game.turn_number}:{game.me.halite_amount}")
+    sc_log(1, f"##FL-Round:{game.turn_number}:{game.me.halite_amount}")
 
     #TODO: Create a function which (game_map, ship_positions) -> command_queue. Allows testing + replay
 
@@ -241,17 +185,51 @@ def one_game_step(me, game_map):
             move_ship_recursive(ship, invalid_positions, ignore_ships, moved_ships, me)
 
     if me.halite_amount >= constants.SHIP_COST and not me.shipyard.position in invalid_positions and len(me.get_ships()) <= q[2]:
-        if logging_level >= 2:
-                logging.info("Generating new ship.")
+        sc_log(2, "Generating new ship.")
         command_queue.append(me.shipyard.spawn())
 
-    logging.info(f"Command queue: {str(command_queue)}")
+    sc_log(1, f"Command queue: {str(command_queue)}")
     return command_queue
 
-""" <<Running the Loop>> """
+""" Stage 1: Pre-game scanning - Permitted X minutes here.
+    Once game = hlt.Game() is run, you have access to the game map for computationally-intensive start-up pre-processing.
+"""
+game = hlt.Game()
+
+if logging_level >= 1:
+#    game.update_frame()
+    game_map = game.game_map
+    map_array = [
+                 [game_map[Position(x,y)].halite_amount for x in range(game_map.width)] for y in range(game_map.height)
+                 ]
+    sc_log(1, f"##FL-Map:{str(json.dumps(map_array))}")
+
+# This is the list of personality parameters to be determined through machine learning.
+p = [0.5,
+     0.5,
+     0.5
+] #TODO: Consider adding p[3] = cap on last round to make ships
+#TODO: Add halite depleted on turn 400; linear interpolation between two
+
+i = 0
+for arg in sys.argv[3:]:
+    sc_log(1, f"Arg: {str(arg)}")
+    p[i] = float(arg)
+    i += 1
+
+q = (p[0]*200, # 0 to 200 - Amount of halite in cell where ships consider it depleted.
+     (0.5+p[1]*0.25)*constants.MAX_HALITE, # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
+     1 + round(p[2]*29) # 1 to 30 - max number of bots
+)
+
+""" Stage 2: Game Turns - Permitted 2 seconds per turn.
+    Once game.ready("MyPythonBot") is run, you have access to positions of units and the ability to send commands.
+"""
+game.ready("MyPythonBot")
+sc_log(1, "Successfully created bot! My Player ID is {}.".format(game.my_id))
 
 while True:
     game.update_frame() # pull updated data
-    command_queue = one_game_step(game.me, game.game_map)
+    command_queue = one_game_step(game)
     game.end_turn(command_queue)
 # TODO: Anything in a function is not visible to other functions unless passed, so me/game_map/invalid_positions all behave wrong now that I've moved them into a function
