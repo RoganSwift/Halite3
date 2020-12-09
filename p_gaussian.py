@@ -1,90 +1,101 @@
 import numpy as np
-from scipy.linalg import cho_factor, cho_solve
-import matplotlib.pyplot as plt
+from math import exp
+import itertools
+import random
 
-def kernel_sqexp (a, s, r):
-    '''return a * np.exp (-0.5 * (r / s)**2)'''
-    return a * np.exp (-0.5 * (r / s)**2)
+# https://newton.cx/~peter/2014/03/elementary-gaussian-processes-in-python/ for much of the gaussian code.
 
-def gaussian_process_covariance_matrix (kernel, x, noise_scale_vector):
-    '''Apply the kernel to the matrix of separations (r[i,j] = x[j] - x[i]) and add noise_scale_vector along the diagonal.'''
-    # "kernel" is a one-parameter GP kernel function; we can
-    # derive it from (e.g.) sqexp_kernel using a Python
-    # lambda expression.
-    
-    # Matrix of separations: r[i,j] = x[j] - x[i]
-    r = x[np.newaxis,:] - x[:,np.newaxis]
-    return kernel (r) + np.diag (noise_scale_vector)
+class prediction_engine():
+    '''Predicts next recommended investigation point, given previously sampled data.
 
-def sample_from_covariance_matrix (covariance_matrix):
-    '''Create random curve obeying the covariance matrix.'''
-    # random_vector is a random vector
-    random_vector = np.random.normal (size=covariance_matrix.shape[0])
+    pred = prediction_engine()
+    pred.append([1,2,3], 4) # Add one four-dimensional data point
+    prediction_x = pred.determine_max() # x coordinates at the highest-predicted point, maximizing exploration and exploitation'''
 
-    # our random_vector has mean 0 and no covariance (covariance matrix = identity matrix)
-    # This simplifies the equation C_s = A * C_r * A.T to C_s = A * A.T
-    # We want a C_s that is our covariance matrix. The solution for C = A * A.T is A = cholesky(C)
-    # A is what enforces our covariance matrix on the random vector, making it a random continuous curve
-    return np.dot (np.linalg.cholesky (covariance_matrix), random_vector)
+    def __init__(self):
+        self.x_known = None
+        self.y_known = None
 
-def krige (data_xs, data_ys, covariance_matrix, kernel, interpolant_xs):
-    # covariance_array  is covariance between our actual measurements (rows) and each of the points we're checking (columns)
-    # covariance_matrix is covariance between the points we're checking and each other
-    covariance_array = kernel (data_xs[:,np.newaxis] - interpolant_xs[np.newaxis,:])
-    
-    # weight_array is, for each point we're checking, the weighting for each actual measurement's y value
-    inverse_covariance_matrix = np.linalg.inv (covariance_matrix)
-    weight_array = np.dot (inverse_covariance_matrix, covariance_array)
-    
-    # interpolant_ys is our prediction for each interpolant_x
-    interpolant_ys = np.dot (weight_array.T, data_ys)
+    def append(self, x_values, y_value):
+        '''Add x_values (N x 1) and y_value (1 x 1) to the engine'''
+        if self.x_known is None:
+            self.x_known = np.asarray([x_values])
+            self.y_known = np.asarray([y_value])
+        else:
+            self.x_known = np.append(self.x_known, [x_values], axis=0)
+            self.y_known = np.append(self.y_known, [y_value], axis=0)
 
-    # interpolant_variance is our prediction of variance for each interpolant_x
-    auto_covariance = kernel (0)
-    interpolant_variance = auto_covariance - np.dot (covariance_array.T, weight_array)
+    def determine_max(self):
+        '''Sample within the available space (0 to 1 in each dimension for my case) and return the highest predicted point'''  
 
-    return interpolant_ys, interpolant_variance
+        # Determine sample points. Currently samples a random point from the multi-dimensional grid with each dimension having 10 divisions.
+        # TODO: Latin Hypercube Sampling would reduce computation, allowing a higher n_sample_points for the same effort.
+        n_dimensions = len(self.x_known[0])
+        n_sample_points = 10
+        samples = [[x/n_sample_points + 0.1*random.random() for x in range(0,n_sample_points)] for _ in range(n_dimensions)]
+        prediction_points = list(itertools.product(*samples))
 
-def show_me_sample_functions():
-    x = np.linspace (0, 10, 300)
-    kern = lambda r: kernel_sqexp (1., 1., r)
-    cov = gaussian_process_covariance_matrix (kern, x, 1e-9 * np.ones_like (x))
+        # Calculate major parameters
+        # For the following, N is the number of data points and M is the number of sample points
+        # big_r (N x N) is the correlation matrix - correlations between each data point and each data point (again)
+        # NOTE: big_r is what the original EGO paper called the "covariance matrix" and the source above calls "cov"
+        # NOTE: noise_scale_vector (second argument to calc_big_r) depends on the application. The value I use in this code is arbitrary.
+        big_r = self.calc_big_r(self.x_known,
+                                1e-9 * np.ones(shape=(len(self.x_known),1)))
+        # small_r (N x M) is the correlation array - correlations between each data point and each sample point
+        # NOTE: small_r is what the original EGO paper calls the source above's "di_cov"
+        small_r = self.calc_small_r(prediction_points)
+        # weight_array (N x M) are the weightings given to each data y value, for each sample point
+        weight_array = np.dot(np.linalg.inv(big_r), small_r)
+        # y_estimates (M x 1) are the predicted y value, for each sample point
+        y_estimates = np.dot(weight_array.T, self.y_known)
 
-    for _ in range (10):
-        # ten times, plot a randomly-generated curve
-        plt.plot (x, sample_from_covariance_matrix (cov))
-    plt.show()
+        # auto-covariance (M x M) - it's a bunch of 1s for math reasons
+        # interpolant_variant (M x M) - intermediate step for math reasons
+        # interp_u (M x 1) - a prediction of the variance at each sample point, given the distance from nearby data points
+        auto_covariance = np.ones(shape=(len(prediction_points), len(prediction_points)))
+        interpolant_variance = auto_covariance - np.dot(small_r.T, weight_array)
+        interp_u = np.sqrt (np.diag (interpolant_variance))
 
-def show_me_prediction_ability():
-    # The underlying signal -- there's a trend described by a Gaussian
-    # process, but no measurement error.
-    true_x = np.linspace (0, 10, 300)
-    true_kern = lambda r: kernel_sqexp (1., 1., r)
-    true_cov = gaussian_process_covariance_matrix (true_kern, true_x, 1e-9 * np.ones_like (true_x))
-    true_y = sample_from_covariance_matrix (true_cov)
+        # interp_max_pos (1 x 1) is the index of the point which maximizes exploitation (y_estimates) + exploration (interp_u)
+        # In more detail, the y_estimates reflect where the highest point is based on the data we have
+        #               while interp_u reflects where we might find our model to be wrong.
+        interp_max_pos = np.argmax(y_estimates + interp_u)
 
-    # The data -- samples of the signal, plus noise.
-    w = np.asarray ([30, 75, 150, 155, 210, 240, 255])
-    data_x = true_x[w]
-    data_u = 0.02 * np.ones_like (data_x)
-    data_y = true_y[w] + np.random.normal (scale=data_u)
-    data_cov = gaussian_process_covariance_matrix (true_kern, data_x, data_u)
+        return prediction_points[interp_max_pos], y_estimates[interp_max_pos]
 
-    # Our best guess of the underlying signal given the noisy measurements.
-    interp_x = true_x
-    interp_y, interp_cov = krige (data_x, data_y, data_cov,
-                                  true_kern, interp_x)
-    interp_u = np.sqrt (np.diag (interp_cov))
+    def kernel(self, x_values_1, x_values_2):
+        '''Square-exponential kernel for indetermininate number of dimensions.'''
+        internal_sum = sum([(a-b)**2 for a,b in zip(x_values_1, x_values_2)])
+        # NOTE: This is adapted for multiple dimensions from the following one-dimensional square-exponential kernel:
+        #        sqexp_kernel = a * exp(-0.5*(s/r)**2), where a=1 and r=1 in the source linked above.
+        #       For other applications than my use of this in Halite, you'd want to retain "r" as a scale between
+        #        the dimensions - if one dimension is a lot wider than the others, you'd care less about changes in
+        #        that dimension.
+        return exp(-0.5*internal_sum)
 
-    # identify the highest predicted point
-    interp_max_pos = np.argmax(interp_y + interp_u)
+    def calc_big_r(self, x_known, noise_scale_vector):
+        '''Gaussian process covariance matrix: Apply the kernel to the matrix of separations (r[i,j] = x[j] - x[i]) and add noise_scale_vector along the diagonal.'''
+        matrix_of_separations = np.asarray([[self.kernel(i,j) for i in x_known] for j in x_known])
+        return matrix_of_separations + np.diag (noise_scale_vector)
 
-    plt.plot(data_x, data_y, "o", label='Data')
-    plt.plot(true_x, true_y, label='True')
-    plt.plot(true_x[interp_max_pos], true_y[interp_max_pos], "o", label="highest")
-    plt.plot(interp_x, interp_y, label=u'GP interp, 1σ') 
-    plt.plot(interp_x, interp_y + interp_u, linestyle="--")
-    plt.plot(interp_x, interp_y - interp_u, linestyle="--")
-    plt.show()
+    def calc_small_r(self, x_predictions):
+        '''Covariance array between known x's and interpolation_x's.'''
+        return np.asarray([[self.kernel(i,j) for i in x_predictions] for j in self.x_known])
 
-show_me_prediction_ability()
+if __name__ == "__main__":
+    predictor = prediction_engine()
+
+    real_func = lambda x,y,z: -(x-0.64567)**2 - (y-0.41745)**2 - (z-0.11)**2
+    starter_values = ([0,0,0], [0,1,0.5], [1,0,0.2], [0.9,0.9,0.9])
+
+    for value_set in starter_values:
+        predictor.append(value_set, real_func(*value_set))
+
+    for _ in range(20):
+        # predict the best x value(s) with the current data
+        a, b = predictor.determine_max()
+        print ("%s: %s" % (a, b))
+        # actually calculate the real value associated with the prediction
+        predictor.append(a, real_func(*a))
+        # repeat. We know it's "good enough" when the answers converge about some x values.
