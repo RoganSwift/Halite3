@@ -22,12 +22,26 @@ else:
 
 # TODO: pickle_level as arg[2] removed. See if you can shift stuff up.
 
+# This is the list of personality parameters to be determined through machine learning.
+p = [0.5,
+     0.5,
+     0.5
+] #TODO: Consider adding p[3] = cap on last round to make ships
+#TODO: Add halite depleted on turn 400; linear interpolation between two
+
+i = 0
+for arg in sys.argv[3:]:
+    sc_log(1, f"Arg: {str(arg)}")
+    p[i] = float(arg)
+    i += 1
+
 def sc_log(level, message):
     '''Shortcut Log: if logging_level >= level: logging.info(message)'''
     if logging_level >= level:
         logging.info(message)
 
 def spiral_walk(starting_x, starting_y):
+    '''Spiral walk iterator: yield a position in the square spiral starting at x,y, walking x+1 and turning towards y-1'''
     sc_log(3, f"Walking a spiral from {starting_x},{starting_y}.")
     x,y = starting_x, starting_y
     yield Position(x,y)
@@ -48,24 +62,15 @@ def spiral_walk(starting_x, starting_y):
             yield Position(x,y)
         i+=1
 
-def dist_betw_positions(start, end, offset_x = 0, offset_y = 0):
-    return (start.x+offset_x-end.x)**2+(start.y+offset_y-end.y)**2
+def dist_betw_positions(start, end):
+    '''return (start.x-end.x)**2+(start.y-end.y)**2'''
+    return (start.x-end.x)**2+(start.y-end.y)**2
 
-def offset_not_in_invalid(position, invalid_positions, offset_x=0, offset_y=0):
-    sc_log(3, f"Offset_not_in_invalid: Position - {str(position)}")
-    for invalid in invalid_positions:
-        sc_log(3, f"Offset_not_in_invalid: Invalid - {str(invalid)}")
-        if position.x+offset_x == invalid.x and position.y+offset_y == invalid.y:
-            sc_log(3, f"Offset_not_in_invalid: UNSAFE MOVE - REJECT")
-            return False
-    sc_log(3, f"Offset_not_in_invalid: SAFE MOVE - ALLOW")
-    return True
-
-def determine_target(ship):
+def determine_target(ship, game_map, shipyard_position):
     # If ship is full or (ship is on a drained square and carrying lots of halite)
     if ship.halite_amount == constants.MAX_HALITE or (ship.halite_amount > q[1] and game_map[ship.position].halite_amount < q[0]):
         sc_log(3, f"- - Target for ship {ship.id} is shipyard.")
-        return me.shipyard.position
+        return shipyard_position
     else:
         cells_searched = 0
         for search_position in spiral_walk(ship.position.x, ship.position.y):
@@ -80,11 +85,12 @@ def determine_target(ship):
                 sc_log(1, f"??? Search found insufficient halite on map - ordering ship not to move.")
                 return ship.position    
 
-def desired_move(ship, invalid_positions=[], on_shipyard=False):
+def desired_move(ship, invalid_positions, shipyard_position):
+    on_shipyard = (shipyard_position == ship.position)
     sc_log(3, f"Invalid Positions: {str(invalid_positions)}")
     sc_log(2, "- Checking desired move for ship {}.".format(ship.id))
     position = ship.position
-    target = determine_target(ship)
+    target = determine_target(ship, shipyard_position)
 
     if ship.halite_amount < game_map[ship.position].halite_amount*0.1 or position == target:
         return ("stay", position)
@@ -97,15 +103,13 @@ def desired_move(ship, invalid_positions=[], on_shipyard=False):
     else:
         best_distance = dist_betw_positions(position, target)
 
-    options = ((Direction.North, 0,-1),
-               (Direction.East, 1,0),
-               (Direction.South, 0,1),
-               (Direction.West, -1,0))
-    for order, offset_x, offset_y in options:
-        diagonal_distance = dist_betw_positions(position, target, offset_x, offset_y)
-        if diagonal_distance < best_distance and offset_not_in_invalid(position, invalid_positions, offset_x, offset_y):
-            move_order = order
-            destination = Position(position.x+offset_x, position.y+offset_y)
+    options = [Direction.North, Direction.South, Direction.East, Direction.West]
+
+    for option in options:
+        diagonal_distance = dist_betw_positions(position + option, target)
+        if diagonal_distance < best_distance and position + option not in invalid_positions:
+            move_order = option
+            destination = position + option
             best_distance = diagonal_distance
 
     sc_log(2, f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
@@ -204,18 +208,7 @@ if logging_level >= 1:
                  ]
     sc_log(1, f"##FL-Map:{str(json.dumps(map_array))}")
 
-# This is the list of personality parameters to be determined through machine learning.
-p = [0.5,
-     0.5,
-     0.5
-] #TODO: Consider adding p[3] = cap on last round to make ships
-#TODO: Add halite depleted on turn 400; linear interpolation between two
-
-i = 0
-for arg in sys.argv[3:]:
-    sc_log(1, f"Arg: {str(arg)}")
-    p[i] = float(arg)
-    i += 1
+# Apply loaded personality parameters
 
 q = (p[0]*200, # 0 to 200 - Amount of halite in cell where ships consider it depleted.
      (0.5+p[1]*0.25)*constants.MAX_HALITE, # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
