@@ -7,6 +7,8 @@ from statistics import stdev, mean
 import itertools
 import matplotlib.pyplot as plt
 import time
+import math
+import random
 
 def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", replaying=False, delete_logs=True):
     if replaying:
@@ -78,24 +80,42 @@ def many_repeat_n_calls(n,z,p_values):
     print("Stdev of means: {}".format(stdev(averages)))
     return (mean(averages),stdev(averages))
 
-# P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
+def latin_hypercube(n_dimensions):
+    '''Produce random sample points within a multi-dimension unit-length hypercube where no two points are orthogonal.''' 
+    n_samples = math.ceil(2*math.sqrt(n_dimensions)) # Gotta choose some number for this. Definitely can be improved.
+    div_width = 1/n_samples
+    # For each dimension (outer for loop), produce one random sample spot in each div_width-spaced bin, then shuffle each dimension's points.
+    dimension_points = [random.sample(
+                                       [(i+random.random())*div_width for i in range(n_samples)],
+                                       n_samples
+                                      )
+                        for _ in range(n_dimensions)]
+    # Produce a list of sample points, with the ith sample point using the ith element of each dimension's points.
+    # Since there's only one sample point per bin in each dimension, the result is a latin hypercube.
+    sample_points = list(zip(*dimension_points))
+    return sample_points
 
-# before = time.time()
-# averages = scan_pvalues(1, P0_values, P1_values, P2_values)
-# after = time.time()
+if __name__ == "__main__":
+    print(latin_hypercube(3))
 
-# sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
-# pretty_sorted_averages = "\n".join([str(row) for row in sorted_averages])
+    # P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
-# with open("result.log", "w") as file:
-#     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
-#     file.write(pretty_sorted_averages)
+    # before = time.time()
+    # averages = scan_pvalues(1, P0_values, P1_values, P2_values)
+    # after = time.time()
 
-results = call_halite(bot1="MyBot.py 2", delete_logs=False)
-print(results['stderr'])
-#TODO: test all the changes from this update
+    # sorted_averages = sorted(averages,key=lambda x: x[0],reverse=True)
+    # pretty_sorted_averages = "\n".join([str(row) for row in sorted_averages])
 
-#print(many_repeat_n_calls(1,10,[0.5,0.5,0.5,0.5]))
+    # with open("result.log", "w") as file:
+    #     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
+    #     file.write(pretty_sorted_averages)
+
+    #results = call_halite(bot1="MyBot.py 2", delete_logs=False)
+    #print(results['stderr'])
+    #TODO: test all the changes from this update
+
+    #print(many_repeat_n_calls(1,10,[0.5,0.5,0.5,0.5]))
 
 
-#TODO: Figure out why collisions occur. Watch a replay.
+    #TODO: Figure out why collisions occur. Watch a replay.
