@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import time
 import math
 import random
+import MyBot
 
 def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", replaying=False, delete_logs=True):
     if replaying:
@@ -95,9 +96,12 @@ def latin_hypercube(n_dimensions):
     sample_points = list(zip(*dimension_points))
     return sample_points
 
+def run_test():
+    bot = MyBot.FlinkBot()
+    return bot.perform_test("example_state.state")
+    
 if __name__ == "__main__":
-    print(latin_hypercube(3))
-
+    #print(run_test())
     # P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
     # before = time.time()
@@ -111,8 +115,8 @@ if __name__ == "__main__":
     #     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
     #     file.write(pretty_sorted_averages)
 
-    #results = call_halite(bot1="MyBot.py 2", delete_logs=False)
-    #print(results['stderr'])
+    results = call_halite(bot1="MyBot.py 2", delete_logs=False)
+    print(results['stderr'])
     #TODO: test all the changes from this update
 
     #print(many_repeat_n_calls(1,10,[0.5,0.5,0.5,0.5]))

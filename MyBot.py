@@ -8,6 +8,8 @@
 import sys
 import json
 import logging
+import time
+import pickle
 
 # Import the Halite SDK, which will let you interact with the game.
 import hlt
@@ -64,11 +66,25 @@ def read_committed_positions(ships, command_queue):
     return [ships[ship_id].position + reverted_commands[command] for _, ship_id, command in command_queue]
 
 class FlinkBot():
-    '''A bot (game state + behaviors) for the Halite competition. Initialization begins hlt.Game(). FlinkBot.ready() begins game.ready().'''
+    '''A bot (game state + behaviors) for the Halite competition. Initialization begins hlt.Game().
+    FlinkBot.start_game() runs hlt.Game() and starts X minute timer to do pre-processing.
+    FlinkBot.ready() begins game.ready().
+    '''
     def __init__(self):
-        """ Stage 1: Pre-game scanning - Permitted X minutes here.
+        '''Reserve class variables. These must be populated with one of the following:
+        * self.start_game() - Used when the bot is intended to run in a loop.
+        * self.perform_test() - Used for debugging to sample one game step from a saved game state.
+        '''
+        self.game = None
+        self.game_map = None
+        self.me = None
+        self.ships = None
+        self.q = None
+
+    def start_game(self):
+        ''' Initiate Stage 1: Pre-game scanning - Permitted X minutes here.
         Once game = hlt.Game() is run, you have access to the game map for computationally-intensive start-up pre-processing.
-        """
+        '''
         self.game = hlt.Game()
         self.game_map = self.game.game_map
         self.me = self.game.me
@@ -88,7 +104,40 @@ class FlinkBot():
             1 + round(p[2]*29) # 1 to 30 - max number of bots
         )
 
+    def write_state(self):
+        '''Create two files - save_state contains human-readable details about the game state, while pickle_state contains a pickled copy of the game state.'''
+        with open("save_states/save_state %s %s" % (time.time(), self.game.my_id),'w') as save_file:
+            map_array = [
+                        [self.game_map[Position(x,y)].halite_amount for x in range(self.game_map.width)] for y in range(self.game_map.height)
+                        ]
+            save_file.write("Map: %s" % (str(json.dumps(map_array))))
+            save_file.write("q: %s" % (str(self.q)))
+            save_file.write("Halite: %s" % (self.game.me.halite_amount))
+            ship_data = [(ship.id, ship.position.x, ship.position.y, ship.halite_amount) for ship in self.game.me.get_ships()]
+            save_file.write("Ships: %s" % (str(json.dumps(ship_data))))
+        
+        with open("save_states/pickle_state %s %s" % (time.time(), self.game.my_id),'wb') as pickle_file:
+            pickle.dump([self.game, self.q], pickle_file)
+
+    def perform_test(self, pickled_file):
+        with open(pickled_file, 'rb') as pickled_state:
+            state = pickle.load(pickled_state)
+        
+        self.game = state[0]
+        self.game_map = self.game.game_map
+        self.me = self.game.me
+        self.ships = self.me.get_ships()
+        self.q = state[1]
+
+        #TODO: Find out how to save the game constants (perhaps make my own dictionary of them?) and recall them.
+        #TODO: Then run through a test by saving some pickle_state as example_state.state, then running RunAndParse.py with only print(run_test())
+        
+        return self.one_game_step()
+
     def determine_personality_parameters(self, game_map):
+        '''Determine a number between 0 and 1 for each of the personality parameters.
+        
+        Presently, this is grabbed from system arguments when the bot is called, but the intention is for a trained machine-learning bot to read the map and choose optimal parameters.'''
         # TODO: game_map is not currently used. The intention is to train a machine learning algorithm to determine these parameters from the game map.
 
         #sys.argv[0] is "MyBot.py", which we don't need to save.
@@ -112,22 +161,30 @@ class FlinkBot():
         return p
 
     def ready(self):
-        """ Stage 2: Game Turns - Permitted 2 seconds per turn.
+        ''' Initiate Stage 2: Game Turns - Permitted 2 seconds per turn.
         Once game.ready("MyPythonBot") is run, you have access to positions of units and the ability to send commands.
-        """
+        '''
         self.game.ready("MyPythonBot")
+
+        self.write_state()
+
         sc_log(1, "Successfully created bot! My Player ID is {}.".format(self.game.my_id))
 
     def update(self):
+        '''Pull updated game state data from the game and update class variables.'''
         self.game.update_frame() # pull updated data
         self.me = self.game.me
         self.ships = self.me.get_ships()
 
     def submit(self, command_queue):
+        '''Submit the completed command queue.
+
+        self.game.end_turn(command_queue)
+        '''
         self.game.end_turn(command_queue)
 
     def one_game_step(self):
-        """Determine and return the command_queue actions to take this turn."""
+        '''Determine and return the command_queue actions to take this turn.'''
         sc_log(1, f"##FL-Round:{self.game.turn_number}:{self.game.me.halite_amount}")
 
         #TODO: Consider enemy positions when choosing to move
@@ -192,6 +249,7 @@ class FlinkBot():
         return command_queue
 
     def desired_move(self, ship, command_queue):
+        '''Determine the move which gets the given ship closest to its desired target, forbidding claimed spaces in the command_queue.'''
         committed_positions = read_committed_positions(self.ships, command_queue)
         on_shipyard = (self.me.shipyard.position == ship.position)
         sc_log(3, f"Invalid Positions: {str(committed_positions)}")
@@ -223,6 +281,7 @@ class FlinkBot():
         return (move_order, destination)
 
     def determine_target(self, ship):
+        '''Determine where the ship wants to end up, based on its current status and the map.'''
         # If ship is full or (ship is on a drained square and carrying lots of halite)
         if ship.halite_amount == constants.MAX_HALITE or (ship.halite_amount > self.q[1] and self.game_map[ship.position].halite_amount < self.q[0]):
             sc_log(3, f"- - Target for ship {ship.id} is shipyard.")
@@ -242,7 +301,8 @@ class FlinkBot():
                     return ship.position    
 
 if __name__ == "__main__":
-    flink_bot = FlinkBot() # Initialization runs hlt.Game() and starts X minute timer to do pre-processing
+    flink_bot = FlinkBot()
+    flink_bot.start_game() # Initializes, runs hlt.Game() and starts X minute timer to do pre-processing
     flink_bot.ready() # Readying starts 2-second turn timer phase
 
     while True:

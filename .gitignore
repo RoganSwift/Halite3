@@ -6,3 +6,5 @@ workspace.code-workspace
 helpfile.txt
 *.log
 open.bat
+__pycache__
+save_states
