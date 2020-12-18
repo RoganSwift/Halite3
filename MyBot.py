@@ -54,7 +54,10 @@ def dist_betw_positions(start, end):
     return (start.x-end.x)**2+(start.y-end.y)**2
 
 def read_moved_ships(command_queue):
-    return [ship_id for _, ship_id, _ in command_queue]
+    return [int(command.split(' ')[1]) for command in command_queue]
+
+def dir_to_pos(direction):
+    return Position(direction[0], direction[1])
 
 reverted_commands = {commands.NORTH: Direction.North,
                      commands.SOUTH: Direction.South,
@@ -63,7 +66,15 @@ reverted_commands = {commands.NORTH: Direction.North,
                      commands.STAY_STILL: Direction.Still}
 
 def read_committed_positions(ships, command_queue):
-    return [ships[ship_id].position + reverted_commands[command] for _, ship_id, command in command_queue]
+    if len(command_queue) > 0:
+        result = []
+        for command in command_queue:
+            _, ship_id, direction = command.split(" ")
+            ship = next((x for x in ships if x.id == int(ship_id)), None)
+            result.append(ship.position + dir_to_pos(reverted_commands[direction]))
+        return result
+    else:
+        return []
 
 class FlinkBot():
     '''A bot (game state + behaviors) for the Halite competition. Initialization begins hlt.Game().
@@ -80,6 +91,7 @@ class FlinkBot():
         self.me = None
         self.ships = None
         self.q = None
+        self.CONSTANTS = None
 
     def start_game(self):
         ''' Initiate Stage 1: Pre-game scanning - Permitted X minutes here.
@@ -89,6 +101,22 @@ class FlinkBot():
         self.game_map = self.game.game_map
         self.me = self.game.me
         self.ships = self.me.get_ships()
+        self.CONSTANTS = {
+            'SHIP_COST': constants.SHIP_COST,
+            'DROPOFF_COST': constants.DROPOFF_COST,
+            'MAX_HALITE': constants.MAX_HALITE,
+            'MAX_TURNS': constants.MAX_TURNS,
+            'EXTRACT_RATIO': constants.EXTRACT_RATIO,
+            'MOVE_COST_RATIO': constants.MOVE_COST_RATIO,
+            'INSPIRATION_ENABLED': constants.INSPIRATION_ENABLED,
+            'INSPIRATION_RADIUS': constants.INSPIRATION_RADIUS,
+            'INSPIRATION_SHIP_COUNT': constants.INSPIRATION_SHIP_COUNT,
+            'INSPIRED_EXTRACT_RATIO': constants.INSPIRED_EXTRACT_RATIO,
+            'INSPIRED_BONUS_MULTIPLIER': constants.INSPIRED_BONUS_MULTIPLIER,
+            'INSPIRED_MOVE_COST_RATIO': constants.INSPIRED_MOVE_COST_RATIO,
+            'WIDTH': constants.WIDTH,
+            'HEIGHT': constants.HEIGHT
+        }
 
         if logging_level >= 1:
             map_array = [
@@ -100,26 +128,32 @@ class FlinkBot():
 
         # Apply loaded personality parameters
         self.q = (p[0]*200, # 0 to 200 - Amount of halite in cell where ships consider it depleted.
-            (0.5+p[1]*0.25)*constants.MAX_HALITE, # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
+            (0.5+p[1]*0.25)*self.CONSTANTS['MAX_HALITE'], # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
             1 + round(p[2]*29) # 1 to 30 - max number of bots
         )
 
     def write_state(self):
         '''Create two files - save_state contains human-readable details about the game state, while pickle_state contains a pickled copy of the game state.'''
-        with open("save_states/save_state %s %s" % (time.time(), self.game.my_id),'w') as save_file:
+        with open("save_states/save_state id%s round%s %s" % (self.game.my_id, self.game.turn_number, int(time.time())),'w') as save_file:
             map_array = [
                         [self.game_map[Position(x,y)].halite_amount for x in range(self.game_map.width)] for y in range(self.game_map.height)
                         ]
-            save_file.write("Map: %s" % (str(json.dumps(map_array))))
-            save_file.write("q: %s" % (str(self.q)))
-            save_file.write("Halite: %s" % (self.game.me.halite_amount))
+            save_file.write("Map: %s\n" % (str(json.dumps(map_array))))
+            save_file.write("q: %s\n" % (str(self.q)))
+            save_file.write("Halite: %s\n" % (self.game.me.halite_amount))
             ship_data = [(ship.id, ship.position.x, ship.position.y, ship.halite_amount) for ship in self.game.me.get_ships()]
-            save_file.write("Ships: %s" % (str(json.dumps(ship_data))))
+            save_file.write("Ships: %s\n" % (str(json.dumps(ship_data))))
         
-        with open("save_states/pickle_state %s %s" % (time.time(), self.game.my_id),'wb') as pickle_file:
-            pickle.dump([self.game, self.q], pickle_file)
+        with open("save_states/pickle_state id%s round%s %s" % (self.game.my_id, self.game.turn_number, int(time.time())),'wb') as pickle_file:
+            pickle.dump([self.game, self.q, self.CONSTANTS], pickle_file)
 
     def perform_test(self, pickled_file):
+        """Run one turn of the bot starting from the game state in pickled_file.
+        
+        :param pickled_file: a previously-pickled copy of [self.game, self.q, self.CONSTANTS] from an actual game run.
+
+        :return: command_queue developed over the turn.
+        """
         with open(pickled_file, 'rb') as pickled_state:
             state = pickle.load(pickled_state)
         
@@ -128,9 +162,26 @@ class FlinkBot():
         self.me = self.game.me
         self.ships = self.me.get_ships()
         self.q = state[1]
+        self.CONSTANTS = state[2]
 
-        #TODO: Find out how to save the game constants (perhaps make my own dictionary of them?) and recall them.
-        #TODO: Then run through a test by saving some pickle_state as example_state.state, then running RunAndParse.py with only print(run_test())
+        # This needs to exist because hlt.constants doesn't accept the same names it provides.
+        CONSTANTS_RENAMED_FOR_IMPORT = {
+            'map_width': self.CONSTANTS['WIDTH'],
+            'map_height': self.CONSTANTS['HEIGHT'],
+            'NEW_ENTITY_ENERGY_COST': self.CONSTANTS['SHIP_COST'],
+            'DROPOFF_COST': self.CONSTANTS['DROPOFF_COST'],
+            'MAX_ENERGY': self.CONSTANTS['MAX_HALITE'],
+            'MAX_TURNS': self.CONSTANTS['MAX_TURNS'],
+            'EXTRACT_RATIO': self.CONSTANTS['EXTRACT_RATIO'],
+            'MOVE_COST_RATIO': self.CONSTANTS['MOVE_COST_RATIO'],
+            'INSPIRATION_ENABLED': self.CONSTANTS['INSPIRATION_ENABLED'],
+            'INSPIRATION_RADIUS': self.CONSTANTS['INSPIRATION_RADIUS'],
+            'INSPIRATION_SHIP_COUNT': self.CONSTANTS['INSPIRATION_SHIP_COUNT'],
+            'INSPIRED_EXTRACT_RATIO': self.CONSTANTS['INSPIRED_EXTRACT_RATIO'],
+            'INSPIRED_BONUS_MULTIPLIER': self.CONSTANTS['INSPIRED_BONUS_MULTIPLIER'],
+            'INSPIRED_MOVE_COST_RATIO': self.CONSTANTS['INSPIRED_MOVE_COST_RATIO']
+        }
+        hlt.constants.load_constants(CONSTANTS_RENAMED_FOR_IMPORT)
         
         return self.one_game_step()
 
@@ -166,8 +217,6 @@ class FlinkBot():
         '''
         self.game.ready("MyPythonBot")
 
-        self.write_state()
-
         sc_log(1, "Successfully created bot! My Player ID is {}.".format(self.game.my_id))
 
     def update(self):
@@ -187,13 +236,15 @@ class FlinkBot():
         '''Determine and return the command_queue actions to take this turn.'''
         sc_log(1, f"##FL-Round:{self.game.turn_number}:{self.game.me.halite_amount}")
 
+        command_queue = []
+
         #TODO: Consider enemy positions when choosing to move
         #      If you can't grab a list of their positions, spiral_walk until you find the closest.
         for ship in self.ships:
             if ship.id not in read_moved_ships(command_queue):
                 command_queue = self.move_ship_recursive(command_queue, ship, [])
 
-        if self.me.halite_amount >= constants.SHIP_COST and self.me.shipyard.position not in read_committed_positions(self.ships, command_queue) and len(self.ships) <= self.q[2]:
+        if self.me.halite_amount >= self.CONSTANTS['SHIP_COST'] and self.me.shipyard.position not in read_committed_positions(self.ships, command_queue) and len(self.ships) <= self.q[2]:
             sc_log(2, "Generating new ship.")
             command_queue.append(self.me.shipyard.spawn())
 
@@ -222,7 +273,9 @@ class FlinkBot():
                 if ship.id != other_ship.id and other_ship.position == move_position and other_ship.id not in ignore_ships and other_ship.id not in read_moved_ships(command_queue):
                     sc_log(1, f"Move_ship_recursion: Ship {ship.id} blocked by {other_ship}. Letting it go first.")
                     # If one is found, let it move first, ignoring this ship (criteria (3) above)
-                    command_queue = self.move_ship_recursive(command_queue, other_ship, [iship for iship in ignore_ships].append(ship.id))
+                    ignore_ships_copy = [iship for iship in ignore_ships]
+                    ignore_ships_copy.append(ship.id)
+                    command_queue = self.move_ship_recursive(command_queue, other_ship, ignore_ships_copy)
                     # If that ship (or its down-chain friends) decided to commit this spot,
                     #   we need to restart the while loop and desired_move elsewhere.
                     if move_position in read_committed_positions(self.ships, command_queue):
@@ -271,10 +324,11 @@ class FlinkBot():
         options = [Direction.North, Direction.South, Direction.East, Direction.West]
 
         for option in options:
-            diagonal_distance = dist_betw_positions(position + option, target)
-            if diagonal_distance < best_distance and position + option not in committed_positions:
+            offset_pos = position +Position(option[0], option[1])
+            diagonal_distance = dist_betw_positions(offset_pos, target)
+            if diagonal_distance < best_distance and offset_pos not in committed_positions:
                 move_order = option
-                destination = position + option
+                destination = offset_pos
                 best_distance = diagonal_distance
 
         sc_log(2, f"- - Next step for ship {ship.id} is {str(move_order)} to {str(destination)}")        
@@ -283,7 +337,7 @@ class FlinkBot():
     def determine_target(self, ship):
         '''Determine where the ship wants to end up, based on its current status and the map.'''
         # If ship is full or (ship is on a drained square and carrying lots of halite)
-        if ship.halite_amount == constants.MAX_HALITE or (ship.halite_amount > self.q[1] and self.game_map[ship.position].halite_amount < self.q[0]):
+        if ship.halite_amount == self.CONSTANTS['MAX_HALITE'] or (ship.halite_amount > self.q[1] and self.game_map[ship.position].halite_amount < self.q[0]):
             sc_log(3, f"- - Target for ship {ship.id} is shipyard.")
             return self.me.shipyard.position
         else:
@@ -296,7 +350,7 @@ class FlinkBot():
 
                 # If there is insufficient halite on the map (very high threshold for depleted), stop.
                 cells_searched += 1
-                if cells_searched > 4*max(constants.WIDTH, constants.HEIGHT)**2: # this is worst-case of sitting in a corner
+                if cells_searched > 4*max(self.CONSTANTS['WIDTH'], self.CONSTANTS['HEIGHT'])**2: # this is worst-case of sitting in a corner
                     sc_log(1, f"??? Search found insufficient halite on map - ordering ship not to move.")
                     return ship.position    
 
@@ -306,9 +360,13 @@ if __name__ == "__main__":
     flink_bot.ready() # Readying starts 2-second turn timer phase
 
     while True:
-        # Grab updated game map details
-        flink_bot.update()
-        # Determine set of commands
-        command_queue = flink_bot.one_game_step()
-        # Submit commands
-        flink_bot.submit(command_queue)
+        try:
+            # Grab updated game map details
+            flink_bot.update()
+            # Determine set of commands
+            command_queue = flink_bot.one_game_step()
+            # Submit commands
+            flink_bot.submit(command_queue)
+        except Exception:
+            flink_bot.write_state()
+            raise

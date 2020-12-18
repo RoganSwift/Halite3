@@ -96,12 +96,12 @@ def latin_hypercube(n_dimensions):
     sample_points = list(zip(*dimension_points))
     return sample_points
 
-def run_test():
+def run_test(state_file_name):
     bot = MyBot.FlinkBot()
-    return bot.perform_test("example_state.state")
+    return bot.perform_test(state_file_name)
     
 if __name__ == "__main__":
-    #print(run_test())
+    #print(run_test("example_state NoneType not iterable"))
     # P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
     # before = time.time()
