@@ -10,6 +10,7 @@ import json
 import logging
 import time
 import pickle
+import argparse
 
 # Import the Halite SDK, which will let you interact with the game.
 import hlt
@@ -17,13 +18,24 @@ from hlt import constants, commands # This library contains constant values.
 from hlt.positionals import Direction, Position # This library contains direction metadata to better interface with the game.
 
 #sys.argv[0] is "MyBot.py", which we don't need to save.
-if len(sys.argv) >= 2:
-    logging_level = int(sys.argv[1])
-else:
-    logging_level = 0
+parser = argparse.ArgumentParser(description='FlinkBot')
+parser.add_argument('-l', type=int, default=1, help='Logging level. See FlinkBot.sc_log docstring.')
+parser.add_argument('-pickle', action='store_true', help='If present, log game state on error.')
+parser.add_argument('-p', nargs=3, type=float, default=[0.5,0.5,0.5], help='Personality parameters. Between 0 and 1.')
+args = parser.parse_args()
+
+logging_level = args.l
 
 def sc_log(level, message):
-    '''Shortcut Log: if logging_level >= level: logging.info(message)'''
+    '''
+    if logging_level >= level:
+        logging.info(message)
+    
+    Level 1: Minimum. Log map when available, halite per round, and other necessary information.
+    Level 2: Log major calculation steps. Used to see process flow in logs.
+    Level 3: Log various small things that happen. Mostly for earlier detailed debugging.
+    
+    '''
     if logging_level >= level:
         logging.info(message)
 
@@ -190,26 +202,10 @@ class FlinkBot():
         
         Presently, this is grabbed from system arguments when the bot is called, but the intention is for a trained machine-learning bot to read the map and choose optimal parameters.'''
         # TODO: game_map is not currently used. The intention is to train a machine learning algorithm to determine these parameters from the game map.
-
-        #sys.argv[0] is "MyBot.py", which we don't need to save.
-        #sys.argv[1] is the logging level, which is captured elsewhere.
-
-        # TODO: pickle_level as arg[2] removed. See if you can shift stuff up.
-
-        # This is the list of personality parameters to be determined through machine learning.
-        p = [0.5,
-            0.5,
-            0.5
-        ] #TODO: Consider adding p[3] = cap on last round to make ships
-        #TODO: Add halite depleted on turn 400; linear interpolation between two
-
-        i = 0
-        for arg in sys.argv[3:]:
-            sc_log(1, f"Arg: {str(arg)}")
-            p[i] = float(arg)
-            i += 1
+        # TODO: Consider adding p[3] = cap on last round to make ships
+        # TODO: Add halite depleted on turn 400; linear interpolation between two
         
-        return p
+        return args.p
 
     def ready(self):
         ''' Initiate Stage 2: Game Turns - Permitted 2 seconds per turn.
@@ -368,5 +364,6 @@ if __name__ == "__main__":
             # Submit commands
             flink_bot.submit(command_queue)
         except Exception:
-            flink_bot.write_state()
+            if args.pickle:
+                flink_bot.write_state()
             raise

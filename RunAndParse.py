@@ -10,8 +10,9 @@ import time
 import math
 import random
 import MyBot
+import p_gaussian
 
-def call_halite(width=32, height=32, bot1="MyBot.py 2", bot2="MyBot.py 0", replaying=False, delete_logs=True):
+def call_halite(width=32, height=32, bot1="MyBot.py", bot2="MyBot.py", replaying=False, delete_logs=True):
     if replaying:
         replay_text = ""
     else:
@@ -68,10 +69,10 @@ def many_repeat_n_calls(n,z,p_values):
     for i in range(z):
         print("Loop {}".format(i))
         maxes = []
-        for j in range(n):
+        for _ in range(n):
             data = call_halite(bot1=f"MyBot.py 2 {p_values_text}", delete_logs=False)
             halite_data = data['halite']
-            max_round, max_halite = sorted(halite_data,key=lambda x:x[1], reverse=True)[0]
+            _, max_halite = sorted(halite_data,key=lambda x:x[1], reverse=True)[0]
             maxes.append(max_halite)
         print(" - Maxes: {}".format(maxes))
         print(" - Mean: {}".format(mean(maxes)))
@@ -99,9 +100,38 @@ def latin_hypercube(n_dimensions):
 def run_test(state_file_name):
     bot = MyBot.FlinkBot()
     return bot.perform_test(state_file_name)
-    
+
+def optimize():
+
+
+    #TODO: Docstring and make runs more consistent. As is, can't optimize due to variance.
+    predictor = p_gaussian.PredictionEngine()
+
+    def call_halite_with_parameters(parameters):
+        bot_settings = "MyBot.py -p %s" % (" ".join([str(param) for param in parameters]))
+        results = call_halite(bot1=bot_settings, delete_logs=False)
+        maximum = max([round[1] for round in results['halite']])
+        return maximum
+
+    starter_values = latin_hypercube(3)
+
+    for value_set in starter_values:
+        halite_result = call_halite_with_parameters(value_set)
+        print ("%s: %s" % (value_set, halite_result))
+        predictor.append(value_set, halite_result)
+
+    for _ in range(20):
+        # predict the best x value(s) with the current data
+        predicted_set, _ = predictor.determine_max()
+        # actually calculate the real value associated with the prediction
+        halite_result = call_halite_with_parameters(predicted_set)
+        print ("%s: %s" % (predicted_set, halite_result))
+        predictor.append(predicted_set, halite_result)
+        # repeat. We know it's "good enough" when the answers converge about some x values.
+
 if __name__ == "__main__":
-    #print(run_test("example_state NoneType not iterable"))
+    optimize()
+    #print(run_test("example_state r6.state"))
     # P0_values = P1_values = P2_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
     # before = time.time()
@@ -115,9 +145,8 @@ if __name__ == "__main__":
     #     file.write(f"Time elapsed: {str(round(after-before))} seconds\n")
     #     file.write(pretty_sorted_averages)
 
-    results = call_halite(bot1="MyBot.py 2", delete_logs=False)
-    print(results['stderr'])
-    #TODO: test all the changes from this update
+    #results = call_halite(bot1="MyBot.py -p 0.5 0.5 0.5", delete_logs=False)
+    #print(results['stderr'])
 
     #print(many_repeat_n_calls(1,10,[0.5,0.5,0.5,0.5]))
 

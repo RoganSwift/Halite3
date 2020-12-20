@@ -5,7 +5,7 @@ import random
 
 # https://newton.cx/~peter/2014/03/elementary-gaussian-processes-in-python/ for much of the gaussian code.
 
-class prediction_engine():
+class PredictionEngine():
     '''Predicts next recommended investigation point, given previously sampled data.
 
     pred = prediction_engine()
@@ -84,7 +84,7 @@ class prediction_engine():
         return np.asarray([[self.kernel(i,j) for i in x_predictions] for j in self.x_known])
 
 if __name__ == "__main__":
-    predictor = prediction_engine()
+    predictor = PredictionEngine()
 
     real_func = lambda x,y,z: -(x-0.64567)**2 - (y-0.41745)**2 - (z-0.11)**2
     starter_values = ([0,0,0], [0,1,0.5], [1,0,0.2], [0.9,0.9,0.9])
