@@ -120,14 +120,17 @@ def optimize():
         print ("%s: %s" % (value_set, halite_result))
         predictor.append(value_set, halite_result)
 
-    for _ in range(20):
-        # predict the best x value(s) with the current data
-        predicted_set, _ = predictor.determine_max()
-        # actually calculate the real value associated with the prediction
-        halite_result = call_halite_with_parameters(predicted_set)
-        print ("%s: %s" % (predicted_set, halite_result))
-        predictor.append(predicted_set, halite_result)
-        # repeat. We know it's "good enough" when the answers converge about some x values.
+    with open('optimize.log','a') as logfile:
+        while True:
+            # predict the best x value(s) with the current data
+            predicted_set, _ = predictor.determine_max()
+            # actually calculate the real value associated with the prediction
+            halite_result = call_halite_with_parameters(predicted_set)
+            result_string = "%s: %s" % (predicted_set, halite_result)
+            logfile.write(result_string+"\n")
+            print (result_string)
+            predictor.append(predicted_set, halite_result)
+            # repeat. We know it's "good enough" when the answers converge about some x values.
 
 if __name__ == "__main__":
     optimize()
