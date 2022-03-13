@@ -10,15 +10,22 @@ import time
 import math
 import random
 import MyBot
-import p_gaussian
+import EGO
+import numpy as np
 
-def call_halite(width=32, height=32, bot1="MyBot.py", bot2="MyBot.py", replaying=False, delete_logs=True):
+def call_halite(width=32,
+                height=32,
+                bot1="MyBot.py",
+                bot2="EmptyBot.py",
+                replaying=False,
+                delete_logs=True):
     if replaying:
         replay_text = ""
     else:
         replay_text = "--no-replay"
 
-    command = f'halite.exe -i replays {replay_text} --width {width} --height {height} "python {bot1}" "python {bot2}"'
+    location = 'C:\\Users\\Swift-PC\\Desktop\\CodingProjects\\Halite\\'
+    command = f'{location}halite.exe -i replays {replay_text} --width {width} --height {height} "python {location}{bot1}" "python {location}{bot2}"'
 
     executed = subprocess.run(command, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
     
@@ -31,7 +38,7 @@ def call_halite(width=32, height=32, bot1="MyBot.py", bot2="MyBot.py", replaying
             collisions += 1
 
     halite_amounts = []
-    with open("bot-0.log") as log_file:
+    with open(f"bot-0.log", 'r') as log_file:
         for line in log_file:
             if line.find("##FL-Map") >= 0:
                 game_map_string = line.split(":")[3]
@@ -102,34 +109,55 @@ def run_test(state_file_name):
     return bot.perform_test(state_file_name)
 
 def optimize():
+    with open('Halite\optimize.log','w') as logfile:
+        # Setup
+        kernel = lambda r: np.exp(-0.5 * r**2)
+        predictor = EGO.EGO(3, kernel, 0.1)
 
+        def call_halite_with_parameters(parameters):
+            bot_settings = "MyBot.py -p %s" % (" ".join([str(param) for param in parameters]))
+            logfile.write(bot_settings+"\n")
+            results = call_halite(bot1=bot_settings, delete_logs=False)
+            maximum = max([round[1] for round in results['halite']])
+            return maximum
 
-    #TODO: Docstring and make runs more consistent. As is, can't optimize due to variance.
-    predictor = p_gaussian.PredictionEngine()
+        starter_values = latin_hypercube(3)
+        #TODO: generates 4 starter values for 3 dimensions
 
-    def call_halite_with_parameters(parameters):
-        bot_settings = "MyBot.py -p %s" % (" ".join([str(param) for param in parameters]))
-        results = call_halite(bot1=bot_settings, delete_logs=False)
-        maximum = max([round[1] for round in results['halite']])
-        return maximum
+        for value_set in starter_values:
+            halite_result = call_halite_with_parameters(value_set)
+            print(f"Added point: {value_set} is {halite_result}")
+            predictor.add_point(halite_result, value_set)
 
-    starter_values = latin_hypercube(3)
+        one_dim = tuple(range(0, 10, 1))
+        sample_points = tuple(itertools.product(one_dim, one_dim, one_dim))
+        interp_x = np.asarray(sample_points) / 10 # the positions we predict at
 
-    for value_set in starter_values:
-        halite_result = call_halite_with_parameters(value_set)
-        print ("%s: %s" % (value_set, halite_result))
-        predictor.append(value_set, halite_result)
-
-    with open('optimize.log','a') as logfile:
         while True:
-            # predict the best x value(s) with the current data
-            predicted_set, _ = predictor.determine_max()
-            # actually calculate the real value associated with the prediction
-            halite_result = call_halite_with_parameters(predicted_set)
-            result_string = "%s: %s" % (predicted_set, halite_result)
+            # predict the expected (interp_y) and std.dev. (interp_u) at each in interp_x/
+            interp_y, interp_u = predictor.generate_predictions(interp_x)
+
+            max_pos = np.argmax(interp_y+interp_u)
+            max_y_u = interp_x[max_pos, :]
+
+            max_pos = np.argmax(interp_u)
+            max_u = interp_x[max_pos, :]
+            max_u_val = interp_u[max_pos]
+
+            #TODO: It'll re-sample the same point a second time
+            #TODO: But the max_u for the point shouldn't be very high
+            #result_string = f"Best y+u: {max_y_u}. Sampling at {max_u} to explore ({max_u_val})."
+            result_string = f"Best y+u: {max_y_u}."
+            print(result_string)
             logfile.write(result_string+"\n")
-            print (result_string)
-            predictor.append(predicted_set, halite_result)
+
+            # actually calculate the real value associated with the prediction
+            halite_result = call_halite_with_parameters(max_y_u)
+            result_string = f"Added point: {max_y_u} is {halite_result}"
+            print(result_string)
+            logfile.write(result_string+"\n")
+            predictor.add_point(halite_result, max_y_u)
+
             # repeat. We know it's "good enough" when the answers converge about some x values.
 
 if __name__ == "__main__":

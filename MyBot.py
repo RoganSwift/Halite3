@@ -143,6 +143,7 @@ class FlinkBot():
             (0.5+p[1]*0.25)*self.CONSTANTS['MAX_HALITE'], # 50% to 75% of MAX_HALITE - amount of cargo above which ships believe they're returning cargo.
             1 + round(p[2]*29) # 1 to 30 - max number of bots
         )
+        logging.info('Initialized FlinkBot with parameters {p}')
 
     def write_state(self):
         '''Create two files - save_state contains human-readable details about the game state, while pickle_state contains a pickled copy of the game state.'''
@@ -211,9 +212,9 @@ class FlinkBot():
         ''' Initiate Stage 2: Game Turns - Permitted 2 seconds per turn.
         Once game.ready("MyPythonBot") is run, you have access to positions of units and the ability to send commands.
         '''
-        self.game.ready("MyPythonBot")
+        self.game.ready("FlinkBot")
 
-        sc_log(1, "Successfully created bot! My Player ID is {}.".format(self.game.my_id))
+        sc_log(1, "Successfully created FlinkBot! My Player ID is {}.".format(self.game.my_id))
 
     def update(self):
         '''Pull updated game state data from the game and update class variables.'''

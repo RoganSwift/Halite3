@@ -2,7 +2,6 @@ Halite Source
 replays
 run_game.bat
 run_game.sh
-workspace.code-workspace
 helpfile.txt
 *.log
 open.bat
